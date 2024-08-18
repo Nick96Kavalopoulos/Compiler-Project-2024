@@ -207,16 +207,77 @@ class Lexical:
     def print_tokens(self):
         for token in self.tokens:
             print(token)
+        print('########################################################################################################')
+        print("LEXICAL ANALYSIS COMPLETED")
+        print('########################################################################################################')
+        
 ########################################################################################################
 # Syntax Analyzer
 ########################################################################################################
 class Syntax:
+
+
     def __init__(self, tokens):
         self.tokens = tokens
         self.position = 0
         self.current_token = self.tokens[self.position]
+
+        # De thelw comments sto suntaktiko
         self.tokens = [token for token in self.tokens if token.get_token_type() != comment_tok]
         
+
+        # Quad Variables
+        self.quad_counter = 0
+        self.quad_list = []
+        self.temp_variables = []
+        self.T_i = 1
+        
+
+    def nextQuad(self):
+        #H tampela tou kathe quad prwta ginetai +1 kai meta epistrefetai giati h prwth einai 1
+        self.quad_counter += 1
+        return self.quad_counter
+    
+    def genQuad(self, op, x, y, z):
+        quad = [self.nextQuad(), op, x, y, z]
+        self.quad_list.append(quad)
+        
+        return quad
+    
+    def newTemp(self):
+        # ta temp variables pou mpainoun sth teleutaia thesh tou quad
+        # T_i = 1,2,3...
+        self.temp = f"T_{self.T_i}"   
+        
+        self.temp_variables.append(self.temp)
+        self.T_i += 1
+        return self.temp
+    
+    def emptyList(self):
+        return []
+    
+    def makeList(self, x):
+        return [x]
+    
+    def merge(self, list1, list2):
+        return list1 + list2
+        
+    def backpatch(self, counters_list, z):
+        '''Vazei to value tou z se ola ta quads me 
+        counter idio me tous counters ths counters_list
+        kai kaino sth thesh 4 -> vhma - pou kanei jump'''
+        for i in counters_list:
+            self.quad_list[i-1][4] = z
+        '''dedomenou oti kathe quad exei unique counter
+        pou ksekina apo 1 tote h thesh kathe quad sth lista 
+        einai counter - 1 opou counter = i edw'''
+    
+    def print_all_quads(self):
+            # gia elegxo
+            for i in range(len(self.quad_list)):
+                print(f"Quad {self.quad_list[i][0]}: {self.quad_list[i][1]}, {self.quad_list[i][2]}, {self.quad_list[i][3]}, {self.quad_list[i][4]}")
+            #print(self.quad_list)
+
     def next_token(self):
         self.position += 1
         if self.position < len(self.tokens):
@@ -224,13 +285,15 @@ class Syntax:
             print(self.current_token)
         else:
             self.current_token = None
-            print('Syntax successfully parsed')
+            print('SYNTAX SUCCESSFULLY PARSED')
+            self.print_all_quads()
             exit()
     
     def startRule(self):
         self.declarations()
         self.functions()
         self.call_main_part()
+        
     
     def functions(self):
         while self.current_token.get_token_value()  == 'def':
@@ -465,36 +528,71 @@ class Syntax:
 
 
     def expression(self):
+        # op = +|- -> add, sub
+        # E -> T1 ( op T2 {P1} )* {P2} apo thewria dinontai ola
+
         self.optional_sign()
-        self.term()
+        T1place = self.term()
         while(self.current_token.get_token_type()==plus_tok or self.current_token.get_token_type()==minus_tok):
-            self.ADD_OP()
-            self.term()
+            add_op = self.ADD_OP()
+            T2place =  self.term()
+
+            w = self.newTemp()
+            self.genQuad(add_op, T1place, T2place, w)
+            T1place = w
+        Eplace = T1place
+        return Eplace
     
+
     def term(self):
-        self.factor()   
-                
+        # op = *|//|% -> mul, div, mod
+        # T -> F1 ( op F2 {P1} )* {P2} idio me expression
+        F1place = self.factor()
+
         while(self.current_token.get_token_type()==mult_tok or self.current_token.get_token_type()==div_tok or self.current_token.get_token_type()==mod_tok):
-            self.MUL_OP()
-            self.factor()
+            mul_op = self.MUL_OP()
+            F2place = self.factor()
+
+            w = self.newTemp()
+            self.genQuad(mul_op, F1place, F2place, w)
+            F1place = w
+        Tplace = F1place
+        return Tplace
+    
 
     def factor(self):
+        # F -> (E) {P1}  
+        # P1 -> F.place = E.place metafora tou E.place sto F.place
+        # thelw na epistrefw ta value twn tokens dhladh an exw digit, expression h paw se idtail
         if(self.current_token.get_token_type()==digit_tok):
-            self.next_token()        
+            value = self.current_token.get_token_value()
+            
+            self.next_token() 
+            return value       
         elif(self.current_token.get_token_type()==l_par_tok):
             self.next_token()
-            self.expression()
+
+            eplace = self.expression()
+            
             if(self.current_token.get_token_type()==r_par_tok):
-                self.next_token()       
+                self.next_token()
+
+                return eplace       
             else:
                 print("Error: FACTOR statement left open", self.current_token)
                 exit(-1)
         elif(self.current_token.get_token_type()==variable_tok or self.current_token.get_token_type()==def_tok):
-            self.next_token()         
-            self.idtail()            
+            value = self.current_token.get_token_value()
+
+            self.next_token()  
+
+            self.idtail() 
+
+            return value         
         else:
             print("Error: Element other than constant/expression/variable in FACTOR", self.current_token)
             exit(-1)
+        
     
     def idtail(self):
         if(self.current_token.get_token_type() == l_par_tok ):
@@ -520,18 +618,31 @@ class Syntax:
             self.ADD_OP()
         
     def ADD_OP(self):
+        # thelw na epistrefw kathe fora ton operator gia na pernei timh to op stoixeio tou quad
         if(self.current_token.get_token_type()==plus_tok):
-            self.next_token()   
-        elif(self.current_token.get_token_type()==minus_tok):
+            add_op = self.current_token.get_token_value()
             self.next_token()
+            return add_op  
+             
+        elif(self.current_token.get_token_type()==minus_tok):
+            minus_op = self.current_token.get_token_value()
+            self.next_token()
+            return minus_op
             
     def MUL_OP(self):
+        # idio me ADD_OP
         if (self.current_token.get_token_type() == mult_tok):
-            self.next_token()           
+            mul_op = self.current_token.get_token_value()
+            self.next_token()  
+            return mul_op         
         elif (self.current_token.get_token_type() == div_tok):
-            self.next_token()    
+            div_op = self.current_token.get_token_value()
+            self.next_token() 
+            return div_op
         elif (self.current_token.get_token_type() == mod_tok):
+            mod_op = self.current_token.get_token_value()
             self.next_token()
+            return mod_op
                         
     def condition(self):
         self.bool_term()        
@@ -596,3 +707,4 @@ if __name__ == "__main__":
     lex.lex()
     syn = Syntax(tokens=tokens)
     syn.startRule()
+    
