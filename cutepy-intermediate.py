@@ -278,6 +278,7 @@ class Syntax:
             for i in range(len(self.quad_list)):
                 print(f"Quad {self.quad_list[i][0]}: {self.quad_list[i][1]}, {self.quad_list[i][2]}, {self.quad_list[i][3]}, {self.quad_list[i][4]}")
             #print(self.quad_list)
+            self.write_Quads()
 
     def next_token(self):
         self.position += 1
@@ -304,6 +305,8 @@ class Syntax:
         if self.current_token.get_token_value() == 'def':
             self.next_token()
             if self.current_token.get_token_type() == def_tok:
+                def_name = self.current_token.get_token_value() 
+                
                 self.next_token()
                 if self.current_token.get_token_type() == l_par_tok:
                     self.next_token()
@@ -318,9 +321,9 @@ class Syntax:
                                 self.functions()
                                 self.glob_decl()
 
-                                self.genQuad('begin_block', self.current_token.get_token_value(), '_', '_')
+                                self.genQuad('begin_block', def_name, '_', '_')
                                 self.code_block()
-                                self.genQuad('end_block', self.current_token.get_token_value(), '_', '_')
+                                self.genQuad('end_block', def_name, '_', '_')
 
                                 if self.current_token.get_token_type() == close_block_tok:
                                     self.next_token()
@@ -394,16 +397,23 @@ class Syntax:
             self.while_stat()
 
     def assignment_stat(self):
+        # S -> input (id) {P1}
         if(self.current_token.get_token_type() == variable_tok):
+            
+            id_place = self.current_token.get_token_value()
+
             while(self.current_token.get_token_type() == variable_tok):
                 self.next_token()
-            
+
             if(self.current_token.get_token_type() == assignment_tok):
                 self.next_token()
                 if(self.current_token.get_token_value() == 'int'):
                     self.next_token()
                     if(self.current_token.get_token_type() == l_par_tok):
                         self.next_token()
+                        #{P1}
+                        self.genQuad('inp', id_place, '_', '_')
+
                         if(self.current_token.get_token_value() == 'input'):
                             self.next_token()  
                             if(self.current_token.get_token_type() == l_par_tok):
@@ -428,7 +438,8 @@ class Syntax:
                         print("Error: Missing ( in assignment", self.current_token)
                         exit(-1)                
                 else:
-                    self.expression()
+                    Eplace = self.expression()
+                    self.genQuad(':=', Eplace, '_', id_place)
             else:
                 print("Error: Expected '=' after variable", self.current_token)
                 exit(-1) 
@@ -437,11 +448,15 @@ class Syntax:
             exit(-1)
 
     def print_stat(self):
+        #S -> print (E) {P2}
         if(self.current_token.get_token_value() == 'print'):
             self.next_token()
             if(self.current_token.get_token_type() == l_par_tok):
                 self.next_token() 
-                self.expression()                
+                #{P2}
+                Eplace = self.expression() 
+                self.genQuad('out', Eplace, '_', '_')
+
                 if(self.current_token.get_token_type() == r_par_tok):
                     self.next_token() 
                 else:
@@ -455,9 +470,13 @@ class Syntax:
             exit(-1)
 
     def return_stat(self):
+        # S -> return (E) {P1}
         if(self.current_token.get_token_value() == 'return'):
             self.next_token()
-            self.expression()
+            
+            Eplace = self.expression()
+            self.genQuad('retv', Eplace, '_', '_')
+
         else:
             print("Error: Missing return command", self.current_token)
             exit(-1)
@@ -542,7 +561,7 @@ class Syntax:
             self.next_token()
 
             # {P1}
-            Bquad = self.nextQuad
+            Bquad = self.nextQuad()
             cond = self.condition()
             # {P2}
             self.backpatch(cond[0], self.nextQuad())
@@ -614,48 +633,48 @@ class Syntax:
         # P1 -> F.place = E.place metafora tou E.place sto F.place
         # thelw na epistrefw ta value twn tokens dhladh an exw digit, expression h paw se idtail
         if(self.current_token.get_token_type()==digit_tok):
-            value = self.current_token.get_token_value()
+            factor_value = self.current_token.get_token_value()
             
             self.next_token() 
-            return value       
+            #return value       
         elif(self.current_token.get_token_type()==l_par_tok):
             self.next_token()
 
-            eplace = self.expression()
-
+            Eplace = self.expression()
+            factor_value = Eplace
             if(self.current_token.get_token_type()==r_par_tok):
                 self.next_token()
 
-                return eplace       
+                #return Eplace       
             else:
                 print("Error: FACTOR statement left open", self.current_token)
                 exit(-1)
         elif(self.current_token.get_token_type()==variable_tok or self.current_token.get_token_type()==def_tok):
-            value = self.current_token.get_token_value()
+            #to thelw global gt tha to xrhsimopoihsw sthn idtail 
+            var_or_def = self.current_token.get_token_value()
 
             self.next_token()  
 
-            self.idtail() 
-
-            return value        
+            factor_value = self.idtail(var_or_def) 
         else:
             print("Error: Element other than constant/expression/variable in FACTOR", self.current_token)
             exit(-1)
+        return factor_value
         
     
-    def idtail(self):
+    def idtail(self, var_or_def):
         #tetrades slide 35
         if(self.current_token.get_token_type() == l_par_tok ):
             self.next_token()
             self.actual_par_list()
-            
-            value = self.current_token.get_token_value()
+                   
             w = self.newTemp()
             # otan ginete x = func (a,b) h idtail pernaei se par ta a,b
             # w = temp variable
             # call temp var
             self.genQuad('par', w, 'RET', '_')
-            self.genQuad('call', value, '_', '_')
+            # printaei to factor_value pou dhmiourgisame sth factor to onoma ths metavlhths h synarthshs pou ginete call dhladh
+            self.genQuad('call', var_or_def, '_', '_')
 
             if(self.current_token.get_token_type()==r_par_tok):
                 self.next_token()
@@ -668,7 +687,7 @@ class Syntax:
             self.return_stat()
         
         else:
-            return self.current_token.get_token_value()
+            return var_or_def
 
     def actual_par_list(self):
         # tetrades apo slide 34
@@ -825,8 +844,14 @@ class Syntax:
         else:
             print("Error: Missing #def in call_main_part", self.current_token)
             exit(-1)
-
-
+        
+    def write_Quads (self):
+        #write all quads in int file
+        f = open("quads.int", "w")
+        for quad in self.quad_list:
+            f.write(str(quad[0]) + " " + str(quad[1]) + " " + str(quad[2]) + " " + str(quad[3]) + " " + str(quad[4]) + "\n")
+    
+    
 
 if __name__ == "__main__":
     if len(sys.argv) == 0:
@@ -837,4 +862,14 @@ if __name__ == "__main__":
     lex.lex()
     syn = Syntax(tokens=tokens)
     syn.startRule()
+    
+    
+
+
+
+
+    
+        
+
+    
     
